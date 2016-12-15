@@ -13,6 +13,8 @@
 #define SDL_AUDIO_BUFFER_SIZE 1024
 #define MAX_AUDIO_FRAME_SIZE 192000
 
+#define FIX_INPUT 1
+
 typedef struct PacketQueue
 {
     AVPacketList *first_pkt, *last_pkt;
@@ -71,7 +73,7 @@ int packet_queue_put(PacketQueue *q, AVPacket *pkt)
     return 0;
 }
 
-static int packet_queue_get(PacketQueue *q, AVPacket *pkt, int block)
+int packet_queue_get(PacketQueue *q, AVPacket *pkt, int block)
 {
     AVPacketList *pkt1;
     int ret;
@@ -154,10 +156,10 @@ int audio_decode_frame(AVCodecContext *aCodecCtx, uint8_t *audio_buf, int buf_si
             int got_frame = 0;
             len1 = avcodec_decode_audio4(aCodecCtx, &frame, &got_frame, &pkt);
 
-            printf( "pkt size=%d \n", pkt.size);
-            printf( "frame size=%u \n", frame.data);
-            printf( "codec size=%d \n",len1);
-            printf("got_frame=%d \n", got_frame);
+           // printf( "pkt size=%d \n", pkt.size);
+            //printf( "frame size=%u \n", frame.data);
+            //printf( "codec size=%d \n",len1);
+            //printf("got_frame=%d \n", got_frame);
 
             if(len1 < 0)
             {
@@ -177,6 +179,14 @@ int audio_decode_frame(AVCodecContext *aCodecCtx, uint8_t *audio_buf, int buf_si
                 frame.channel_layout = av_get_default_channel_layout(frame.channels);
             else if (frame.channels == 0 && frame.channel_layout > 0)
                 frame.channels = av_get_channel_layout_nb_channels(frame.channel_layout);
+
+            printf("frame.sample_rate = %d \n", frame.sample_rate);
+            printf("frame.format = %d \n", frame.format);
+            printf("frame.format bits = %d \n", av_get_bytes_per_sample(frame.format));
+            printf("frame.channels = %d \n", frame.channels);
+            printf("frame.channel_layout = %d \n", frame.channel_layout);
+            printf("frame.nb_samples = %d \n", frame.nb_samples);
+            printf("\n");
 
             /**
              * 接下来判断我们之前设置SDL时设置的声音格式(AV_SAMPLE_FMT_S16)，声道布局，
@@ -211,6 +221,7 @@ int audio_decode_frame(AVCodecContext *aCodecCtx, uint8_t *audio_buf, int buf_si
                 int dst_nb_samples = av_rescale_rnd(swr_get_delay(swr_ctx, frame.sample_rate) + frame.nb_samples,
                                                     wanted_frame.sample_rate, wanted_frame.format, AV_ROUND_INF);
                 printf("swr convert ! \n");
+                printf("dst_nb_samples : %d \n", dst_nb_samples);
                 /**
                   * 转换该AVFrame到设置好的SDL需要的样子，有些旧的代码示例最主要就是少了这一部分，
                   * 往往一些音频能播，一些不能播，这就是原因，比如有些源文件音频恰巧是AV_SAMPLE_FMT_S16的。
@@ -248,7 +259,7 @@ void audio_callback(void *userdata, Uint8 *stream, int len)
 
     SDL_memset(stream, 0, len);
 
-    printf("audio_callback len=%d \n", len);
+    //printf("audio_callback len=%d \n", len);
 
     //向设备发送长度为len的数据
     while(len > 0)
@@ -258,7 +269,7 @@ void audio_callback(void *userdata, Uint8 *stream, int len)
         {
             //从packet中解码数据
             audio_size = audio_decode_frame(aCodecCtx, audio_buf, audio_buf_size);
-            printf("audio_decode_frame finish  audio_size=%d \n", audio_size);
+            //printf("audio_decode_frame finish  audio_size=%d \n", audio_size);
             if(audio_size < 0) //没有解码到数据或者出错，填充0
             {
                 audio_buf_size = 1024;
@@ -300,11 +311,21 @@ int main(int argc, char *argv[])
 
     SDL_Event       event;
 
+    char filename[100];
+
+#ifdef FIX_INPUT
+    strcpy(filename, "/home/wanghuatian/oceans.mp4");
+#else
     if(argc < 2)
     {
         fprintf(stderr, "Usage: test <file> \n");
         exit(1);
     }
+
+    strcpy(filename, argv[1]);
+#endif // FIX_INPUT
+
+
 
     av_register_all();
 
@@ -315,14 +336,14 @@ int main(int argc, char *argv[])
     }
 
     // 读取文件头，将格式相关信息存放在AVFormatContext结构体中
-    if(avformat_open_input(&pFormatCtx, argv[1], NULL, NULL) != 0)
+    if(avformat_open_input(&pFormatCtx, filename, NULL, NULL) != 0)
         return -1;
     // 检测文件的流信息
     if(avformat_find_stream_info(pFormatCtx, NULL) < 0)
         return -1;
 
     // 在控制台输出文件信息
-    av_dump_format(pFormatCtx, 0, argv[1], 0);
+    av_dump_format(pFormatCtx, 0, filename, 0);
 
     for(i = 0; i < pFormatCtx->nb_streams; i++)
     {
@@ -347,6 +368,12 @@ int main(int argc, char *argv[])
     wanted_spec.callback = audio_callback;
     wanted_spec.userdata = aCodecCtx;
 
+    printf("codecCtx sample_rate = %d \n", aCodecCtx->sample_rate);
+    printf("codecCtx channels = %d \n", aCodecCtx->channels);
+    printf("codecCtx sample_fmt = %d \n", aCodecCtx->sample_fmt);
+    printf("AUDIO_S16SYS = %d \n", AUDIO_S16SYS);
+    printf("\n");
+
     /**
      *SDL_OpenAudio 函数通过wanted_spec来打开音频设备，成功返回零，将实际的硬件参数传递给spec的指向的结构体。
      *如果spec为NULL，audio data将通过callback函数，保证将自动转换成硬件音频格式。
@@ -359,6 +386,16 @@ int main(int argc, char *argv[])
         return -1;
     }
 
+    printf("spec freq = %d \n", spec.freq);
+    printf("spec format = %d \n", spec.format);
+    printf("spec channels = %d \n", spec.channels);
+    printf("spec samples = %d \n", spec.samples);
+    printf("spec silence = %d \n", spec.silence);
+    printf("spec padding = %d \n", spec.padding);
+    printf("spec size = %d \n", spec.size);
+    printf("\n");
+
+    printf("AV_SAMPLE_FMT_S16 = %d \n", AV_SAMPLE_FMT_S16);
     wanted_frame.format = AV_SAMPLE_FMT_S16;
     wanted_frame.sample_rate = spec.freq;
     wanted_frame.channel_layout = av_get_default_channel_layout(spec.channels);

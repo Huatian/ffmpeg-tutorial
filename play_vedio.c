@@ -6,7 +6,7 @@
 #include <SDL/SDL.h>
 #include <SDL/SDL_thread.h>
 
-int main2(int argc, char *argv[]) {
+int main(int argc, char *argv[]) {
     AVFormatContext *pFormatCtx = NULL;
     int             i, videoStream;
     AVCodecContext  *pCodecCtx = NULL;
@@ -112,12 +112,29 @@ int main2(int argc, char *argv[]) {
     while (av_read_frame(pFormatCtx, &packet) >= 0){
 
         if(packet.stream_index == videoStream){
+            printf("\n");
+            printf("packet pts: %d \n", packet.pts);
+            printf("packet dts: %d \n", packet.dts);
+            printf("packet size: %d \n", packet.size);
+            //printf("packet duration: %d \n", packet.duration);
+            printf("packet pos: %d \n", packet.pos);
+
+            printf("\n");
             //为视频流解码
             avcodec_decode_video2(pCodecCtx, pFrame, &frameFinished, &packet);
+
+            printf("frame pts: %d \n", pFrame->pts);
+            printf("frame pkt_dts: %d \n", pFrame->pkt_dts);
+            printf("frame coded_picture_number: %d \n", pFrame->coded_picture_number);
+            printf("frame pkt_pos: %d \n", pFrame->pkt_pos);
+            printf("frame pkt_duration: %d \n", pFrame->pkt_duration);
+            printf("frame pkt_size: %d \n", pFrame->pkt_size);
 
             if(frameFinished){
                 SDL_LockYUVOverlay(bmp);
 
+                printf("finish one frame \n");
+                printf("\n");
                 /**
                  *AVPicture 结构体有一个数据指针指向一个有 4 个元素的指针数组。由于我们处理的是 YUV420P,所以
                  *我们只需要 3 个通道即只要三组数据。其它的格式可能需要第四个指针来表示 alpha 通道或者其它参数。行尺寸
